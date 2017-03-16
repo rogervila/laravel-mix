@@ -4,6 +4,8 @@
 
 ## Introduction
 
+[![Greenkeeper badge](https://badges.greenkeeper.io/rogervila/laravel-mix-stylus.svg)](https://greenkeeper.io/)
+
 This project is a fork from [the original Laravel Mix](https://github.com/JeffreyWay/laravel-mix).
 
 Laravel Mix provides a clean, fluent API for defining basic Webpack build steps for your Laravel application. Mix supports several common CSS and JavaScript pre-processors.
