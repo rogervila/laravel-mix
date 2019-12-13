@@ -1,126 +1,133 @@
-let File = require('./File');
-let Mix = require('./index');
-let objectValues = require('lodash').values;
+let collect = require('collect.js');
+let path = require('path');
 
 class Manifest {
     /**
      * Create a new Manifest instance.
      *
-     * @param {string} path
+     * @param {string} name
      */
-    constructor(path) {
-        this.path = path;
+    constructor(name = 'mix-manifest.json') {
         this.manifest = {};
+        this.name = name;
     }
 
+    /**
+     * Get the underlying manifest collection.
+     */
+    get(file = null) {
+        if (file) {
+            return path.posix.join(
+                Config.publicPath,
+                this.manifest[this.normalizePath(file)]
+            );
+        }
+
+        return collect(this.manifest)
+            .sortKeys()
+            .all();
+    }
 
     /**
-     * Add a key-value pair to the manifest file.
+     * Add the given path to the manifest file.
      *
-     * @param {string} original
-     * @param {string} modified
+     * @param {string} filePath
      */
-    add(original, modified) {
-        this.manifest[original] = modified;
+    add(filePath) {
+        filePath = this.normalizePath(filePath);
+
+        let original = filePath.replace(/\?id=\w{20}/, '');
+
+        this.manifest[original] = filePath;
 
         return this;
     }
 
-
     /**
-     * Get the modified version of the given path.
+     * Add a new hashed key to the manifest.
      *
-     * @param {string} original
+     * @param {string} file
      */
-    get(original) {
-        return this.manifest[original];
-    }
+    hash(file) {
+        let hash = new File(path.join(Config.publicPath, file)).version();
 
+        let filePath = this.normalizePath(file);
 
-    /**
-     * Register any applicable event listeners.
-     *
-     * @param {object} events
-     */
-    listen(events) {
-        events.listen('combined', this.appendCombinedFiles.bind(this));
+        this.manifest[filePath] = filePath + '?id=' + hash;
 
         return this;
     }
-
 
     /**
      * Transform the Webpack stats into the shape we need.
      *
      * @param {object} stats
-     * @param {object} options
      */
-    transform(stats, options) {
-        let flattenedPaths = [].concat.apply(
-            [], objectValues(stats.assetsByChunkName)
-        );
+    transform(stats) {
+        this.flattenAssets(stats).forEach(this.add.bind(this));
 
-        flattenedPaths.forEach(path => {
-            path = path.replace(/\\/g, '/');
-
-            let original = path.replace(/\.(\w{20})(\..+)/, '$2');
-
-            this.manifest[original] = path;
-        });
-
-        return JSON.stringify(this.manifest, null, 2);
+        return this;
     }
-
-
-    /**
-     * Append any mix.combine()'d output paths to the manifest.
-     *
-     * @param {array} combine
-     */
-    appendCombinedFiles(toCombine) {
-        let output = toCombine.output
-            .replace(/\\/g, '/')
-            .replace(Mix.config.publicPath, '');
-
-        this.manifest[
-            output.replace(/\.(\w{32})(\..+)/, '$2')
-        ] = output;
-
-        this.refresh();
-    }
-
 
     /**
      * Refresh the mix-manifest.js file.
      */
     refresh() {
-        File.find(this.path).write(this.manifest);
+        File.find(this.path())
+            .makeDirectories()
+            .write(this.manifest);
     }
-
-
-    /**
-     * Determine if the manifest file exists.
-     */
-    exists() {
-        return File.exists(this.path);
-    }
-
 
     /**
      * Retrieve the JSON output from the manifest file.
      */
     read() {
-        return JSON.parse(File.find(this.path).read());
+        return JSON.parse(File.find(this.path()).read());
     }
 
+    /**
+     * Get the path to the manifest file.
+     */
+    path() {
+        return path.join(Config.publicPath, this.name);
+    }
 
     /**
-     * Delete the given file from the manifest.
+     * Flatten the generated stats assets into an array.
      *
-     * @param {string} file
+     * @param {Object} stats
      */
-    remove(file) {
-        File.find(file).delete();
+    flattenAssets(stats) {
+        let assets = Object.assign({}, stats.assetsByChunkName);
+
+        // If there's a temporary mix.js chunk, we can safely remove it.
+        if (assets.mix) {
+            assets.mix = collect(assets.mix)
+                .except('mix.js')
+                .all();
+        }
+
+        return collect(assets)
+            .flatten()
+            .all();
+    }
+
+    /**
+     * Prepare the provided path for processing.
+     *
+     * @param {string} filePath
+     */
+    normalizePath(filePath) {
+        if (Config.publicPath && filePath.startsWith(Config.publicPath)) {
+            filePath = filePath.substring(Config.publicPath.length);
+        }
+        filePath = filePath.replace(/\\/g, '/');
+
+        if (!filePath.startsWith('/')) {
+            filePath = '/' + filePath;
+        }
+
+        return filePath;
     }
 }
 

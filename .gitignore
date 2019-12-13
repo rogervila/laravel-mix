@@ -1,8 +1,8 @@
 node_modules/
-npm-debug.log
 notes.md
 coverage
 .nyc_output
 .idea/
-docs/
-icons/fail.png
+*.log
+package-lock.json
+yarn.lock

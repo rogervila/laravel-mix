@@ -1,6 +1,21 @@
 language: node_js
+
+# Test linux and osx
+os:
+    - linux
+    - osx
+
+# Test against all supported versions of Node.js
 node_js:
-  - "6.1"
-cache: yarn
-before_script:
-  - npm install -g webpack@2.2.0
+    - '8'
+    - '9'
+    - '10'
+    - '11'
+
+# Run ESLint after npm test
+script:
+    - npm run eslint
+
+cache:
+    directories:
+        - 'node_modules'
