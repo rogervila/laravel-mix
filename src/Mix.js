@@ -1,235 +1,122 @@
-let path = require('path');
-let File = require('./File');
 let Paths = require('./Paths');
 let Manifest = require('./Manifest');
-let Versioning = require('./Versioning');
-let Concat = require('./Concat');
-let mergeWith = require('lodash').mergeWith;
-let EntryBuilder = require('./EntryBuilder');
 let Dispatcher = require('./Dispatcher');
+let Components = require('./components/Components');
 
 class Mix {
     /**
-     * Create a new Laravel Mix instance.
+     * Create a new instance.
      */
-     constructor() {
-        this.File = File;
-        this.Paths = new Paths;
-        this.hmr = false;
-        this.sourcemaps = false;
-        this.notifications = true;
-        this.versioning = false;
-        this.js = [];
-        this.entryBuilder = new EntryBuilder(this);
-        this.events = new Dispatcher;
-        this.concat = new Concat(this.events);
-        this.inProduction = process.env.NODE_ENV === 'production';
-        this.publicPath = './';
+    constructor() {
+        this.paths = new Paths();
+        this.manifest = new Manifest();
+        this.dispatcher = new Dispatcher();
+        this.tasks = [];
+        this.bundlingJavaScript = false;
+        this.components = new Components();
     }
 
-
     /**
-     * Initialize the user's webpack.mix.js configuration file.
+     * Determine if the given config item is truthy.
      *
-     * @param {string} rootPath
+     * @param {string} tool
      */
-     initialize(rootPath = '') {
-        if (rootPath) this.Paths.setRootPath(rootPath);
-
-        if (this.isUsingLaravel()) this.publicPath = 'public';
-
-        // This is where we load the user's webpack.mix.js config.
-        if (this.File.exists(this.Paths.mix() + '.js')) {
-            require(this.Paths.mix());
-        }
-
-        this.manifest = new Manifest(
-            path.join(this.publicPath, 'mix-manifest.json')
-            ).listen(this.events);
-
-        if (this.concat.any()) this.concat.watch();
-
-        if (this.versioning) this.enableVersioning();
-
-        this.detectHotReloading();
+    isUsing(tool) {
+        return !!Config[tool];
     }
 
-
     /**
-     * Enable file versioning for the build.
+     * Determine if Mix is executing in a production environment.
      */
-     enableVersioning() {
-        this.versioning = new Versioning(this.version, this.manifest);
-
-        this.versioning
-        .writeHashedFiles()
-        .record()
-        .watch();
-
-        this.events.listen(
-            ['build', 'combined'], () => this.versioning.prune(this.publicPath)
-            );
-
-        this.concat.enableVersioning();
+    inProduction() {
+        return Config.production;
     }
 
+    /**
+     * Determine if Mix should watch files for changes.
+     */
+    isWatching() {
+        return (
+            process.argv.includes('--watch') || process.argv.includes('--hot')
+        );
+    }
 
     /**
-     * Finalize the Webpack configuration.
+     * Determine if polling is used for file watching
+     */
+    isPolling() {
+        return this.isWatching() && process.argv.includes('--watch-poll');
+    }
+
+    /**
+     * Determine if Mix sees a particular tool or framework.
      *
-     * @param {object} webpackConfig
+     * @param {string} tool
      */
-     finalize(webpackConfig) {
-        if (! this.webpackConfig) return webpackConfig;
+    sees(tool) {
+        if (tool === 'laravel') {
+            return File.exists('./artisan');
+        }
 
-        mergeWith(webpackConfig, this.webpackConfig,
-            (objValue, srcValue) => {
-                if (Array.isArray(objValue)) {
-                    return objValue.concat(srcValue);
-                }
-            }
-            );
-
-        return webpackConfig;
+        return false;
     }
 
-
     /**
-     * Prepare the Webpack entry object.
-     */
-     entry() {
-        return this.entryBuilder.build();
-    }
-
-
-    /**
-     * Determine the Webpack output path.
-     */
-     output() {
-        let filename = this.versioning ? '[name].[chunkhash].js' : '[name].js';
-
-        return {
-            path: this.hmr ? '/' : this.publicPath,
-            filename: filename,
-            publicPath: this.hmr ? 'http://localhost:8080/' : './'
-        };
-    }
-
-
-    /**
-     * Determine the appropriate CSS output path.
+     * Determine if the given npm package is installed.
      *
-     * @param {object} segments
+     * @param {string} npmPackage
      */
-     cssOutput(segments) {
-        let regex = new RegExp('^(\.\/)?' + this.publicPath);
-        let pathVariant = this.versioning ? 'hashedPath' : 'path';
+    seesNpmPackage(npmPackage) {
+        try {
+            require.resolve(npmPackage);
 
-        return segments.output[pathVariant].replace(regex, '').replace(/\\/g, '/');
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 
+    /**
+     * Determine if Mix should activate hot reloading.
+     */
+    shouldHotReload() {
+        new File(path.join(Config.publicPath, 'hot')).delete();
+
+        return this.isUsing('hmr');
+    }
 
     /**
-     * Detect if the user desires hot reloading.
+     * Queue up a new task.
      *
-     * @param {bool} force
+     * @param {Task} task
      */
-     detectHotReloading(force = false) {
-        let file = new this.File(this.publicPath + '/hot');
-
-        file.delete();
-
-        // If the user wants hot module replacement, we'll create
-        // a temporary file, so that Laravel can detect it, and
-        // reference the proper base URL for any assets.
-        if (process.argv.includes('--hot') || force) {
-            this.hmr = true;
-
-            file.write('hot reloading enabled');
-        } else {
-            this.hmr = false;
-        }
+    addTask(task) {
+        this.tasks.push(task);
     }
-
 
     /**
-     * Fetch the appropriate Babel config for babel-loader.
+     * Listen for the given event.
+     *
+     * @param {string}   event
+     * @param {Function} callback
      */
-     babelConfig() {
-        let file = this.Paths.root('.babelrc');
-
-        // If the user has defined their own .babelrc file,
-        // the babel-loader will automatically fetch it.
-        // Otherwise, we'll use these defaults.
-        return this.File.exists(file) ? '?cacheDirectory' : '?' + JSON.stringify({
-            'cacheDirectory': true,
-            'presets': [
-            ['es2015', { 'modules': false }]
-            ]
-        });
+    listen(event, callback) {
+        this.dispatcher.listen(event, callback);
     }
-
 
     /**
-     * Determine if we are working with a Laravel project.
+     * Dispatch the given event.
+     *
+     * @param {string} event
+     * @param {*}      data
      */
-     isUsingLaravel() {
-        return this.File.exists('./artisan');
-    }
-
-
-    /**
-     * Reset all configuration to their defaults.
-     */
-     reset() {
-        [
-        'preprocessors', 'sass',
-        'less', 'sourceMaps'
-        ].forEach(prop => this[prop] = null);
-
-        this.publicPath = './';
-        this.js = [];
-        this.entryBuilder.reset();
-        this.events = new Dispatcher;
-        this.concat = new Concat(this.events);
-        this.copy = [];
-
-        return this;
-    }
-
-    getPreprocessorToCompile(toCompile, sourceMap) {
-        if ('sass' === toCompile.type) {
-            return [
-                { loader: 'resolve-url-loader' + sourceMap },
-                {
-                    loader: 'sass-loader',
-                    options: Object.assign({
-                        precision: 8,
-                        outputStyle: 'expanded'
-                    }, toCompile.pluginOptions, { sourceMap: true })
-                }
-            ]
+    dispatch(event, data) {
+        if (typeof data === 'function') {
+            data = data();
         }
 
-        if ('less' === toCompile.type) {
-            return [
-                {
-                    loader: 'less-loader' + sourceMap,
-                    options: toCompile.pluginOptions
-                }
-            ]
-        }
-
-        if ('stylus' === toCompile.type) {
-            return [
-                {
-                    loader: 'stylus-loader' + sourceMap,
-                    options: toCompile.pluginOptions
-                }
-            ]
-        }
+        this.dispatcher.fire(event, data);
     }
-};
+}
 
-
-module.exports = new Mix;
+module.exports = Mix;

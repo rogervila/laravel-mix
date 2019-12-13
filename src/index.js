@@ -1,282 +1,68 @@
-let path = require('path');
-let Mix = require('./Mix');
-let Verify = require('./Verify');
+/*
+ |--------------------------------------------------------------------------
+ | Welcome to Laravel Mix!
+ |--------------------------------------------------------------------------
+ |
+ | Laravel Mix provides a clean, fluent API for defining basic webpack
+ | build steps for your Laravel application. Mix supports a variety
+ | of common CSS and JavaScript pre-processors out of the box.
+ |
+ */
 
 /**
- * Register the Webpack entry/output paths.
- *
- * @param {string|array}  entry
- * @param {string} output
+ * We'll begin by pulling in a few globals that Mix often uses.
  */
-module.exports.js = (entry, output) => {
-    Verify.js(entry, output);
 
-    entry = [].concat(entry).map(file => {
-        return new Mix.File(path.resolve(file)).parsePath();
-    });
+require('./helpers');
+require('dotenv').config();
 
-    output = new Mix.File(output).parsePath();
-
-    if (output.isDir) {
-        output = new Mix.File(
-            path.join(output.path, entry[0].file)
-        ).parsePath();
-    }
-
-    Mix.js = (Mix.js || []).concat({ entry, output });
-
-    Mix.js.base = output.base.replace(Mix.publicPath, '');
-
-    return this;
-};
-
+global.path = require('path');
+global.File = require('./File');
 
 /**
- * Register vendor libs that should be extracted.
- * This helps drastically with long-term caching.
- *
- * @param {array}  libs
- * @param {string} output
+ * This config object is what Mix will reference, when it's time
+ * to dynamically build up your Webpack configuration object.
  */
-module.exports.extract = (libs, output) => {
-    Mix.extract = (Mix.extract || []).concat({
-        libs,
-        output: () => {
-            if (output) {
-                return output.replace(/\.js$/, '')
-                             .replace(Mix.publicPath, '');
-            }
 
-            return path.join(Mix.js.base, 'vendor').replace(/\\/g, '/');
-        }
-    });
-
-    return this;
-};
-
+global.Config = require('./config')();
+global.Mix = new (require('./Mix'))();
 
 /**
- * Register libraries to automatically "autoload" when
- * the appropriate variable is references in js
- *
- * @param {object} libs
+ * If we're working in a Laravel app, we'll explicitly
+ * set the default public path, as a convenience.
  */
-module.exports.autoload = (libs) => {
-    let aliases = {};
 
-    Object.keys(libs).forEach(library => {
-        [].concat(libs[library]).forEach(alias => {
-            aliases[alias] = library;
-        });
-    });
-
-    Mix.autoload = aliases;
-
-    return this;
-};
-
-
-/**
- * Register Sass compilation.
- *
- * @param {string} src
- * @param {string} output
- * @param {object} pluginOptions
- */
-module.exports.sass = (src, output, pluginOptions = {}) => {
-    return module.exports.preprocess(
-        'sass', src, output, pluginOptions
-    );
-};
-
-
-/**
- * Register Less compilation.
- *
- * @param {string} src
- * @param {string} output
- * @param {object} pluginOptions
- */
-module.exports.less = (src, output, pluginOptions = {}) => {
-    return module.exports.preprocess(
-        'less', src, output, pluginOptions
-    );
-};
-
-
-/**
- * Register Stylus compilation.
- *
- * @param {string} src
- * @param {string} output
- * @param {object} pluginOptions
- */
-module.exports.stylus = (src, output, pluginOptions = {}) => {
-    return module.exports.preprocess(
-        'stylus', src, output, pluginOptions
-    );
-};
-
-
-
-/**
- * Register a generic CSS preprocessor.
- *
- * @param {string} type
- * @param {string} src
- * @param {string} output
- * @param {object} pluginOptions
- */
-module.exports.preprocess = (type, src, output, pluginOptions) => {
-    Verify.preprocessor(type, src, output);
-
-    src = new Mix.File(path.resolve(src)).parsePath();
-    output = new Mix.File(output).parsePath();
-
-    if (output.isDir) {
-        output = new Mix.File(
-            path.join(output.path, src.name + '.css')
-        ).parsePath();
-    }
-
-    Mix.preprocessors = (Mix.preprocessors || []).concat({
-        type, src, output, pluginOptions
-    });
-
-    Mix.cssPreprocessor = type;
-
-    return this;
-};
-
-
-/**
- * Combine a collection of files.
- *
- * @param {string|array} src
- * @param {string}       output
- */
-module.exports.combine = (src, output) => {
-    Verify.combine(src);
-
-    Mix.concat.add({ src, output });
-
-    return this;
-};
-
-
-/**
- * Copy one or more files to a new location.
- *
- * @param {string}  from
- * @param {string}  to
- * @param {boolean} flatten
- */
-module.exports.copy = (from, to, flatten = true) => {
-    Mix.copy = Mix.copy || [];
-
-    [].concat(from).forEach(src => {
-        Mix.copy.push({
-            from: src,
-            to: Mix.Paths.root(to),
-            flatten: flatten
-        });
-    });
-
-    return this;
-};
-
-
-/**
- * Minify the provided file.
- *
- * @param {string|array} src
- */
-module.exports.minify = (src) => {
-    output = src.replace(/\.([a-z]{2,})$/i, '.min.$1');
-
-    Mix.concat.add({ src, output });
-
-    return this;
-};
-
-
-/**
- * Enable sourcemap support.
- */
-module.exports.sourceMaps = () => {
-    Mix.sourcemaps = (Mix.inProduction ? false : '#inline-source-map');
-
-    return this;
-};
-
-
-/**
- * Enable compiled file versioning.
- *
- * @param {string|array} files
- */
-module.exports.version = (files = []) => {
-    Mix.versioning = true;
-    Mix.version = [].concat(files);
-
-    return this;
-};
-
-
-/**
- * Disable all OS notifications.
- */
-module.exports.disableNotifications = () => {
-    Mix.notifications = false;
-
-    return this;
-};
-
-
-/**
- * Set the path to your public folder.
- *
- * @param {string} path
- */
-module.exports.setPublicPath = (path) => {
-    Mix.publicPath = path;
-
-    return this;
-};
-
-
-/**
- * Merge custom config with the provided webpack.config file.
- *
- * @param {object} config
- */
-module.exports.webpackConfig = (config) => {
-    Mix.webpackConfig = config;
-
-    return this;
+if (Mix.sees('laravel')) {
+    Config.publicPath = 'public';
 }
 
+/**
+ * If the user activates hot reloading, with the --hot
+ * flag, we'll record it as a file, so that Laravel
+ * can detect it and update its mix() url paths.
+ */
+
+Mix.listen('init', () => {
+    if (Mix.shouldHotReload()) {
+        let http = process.argv.includes('--https') ? 'https' : 'http';
+        let port = process.argv.includes('--port')
+            ? process.argv[process.argv.indexOf('--port') + 1]
+            : Config.hmrOptions.port;
+
+        new File(path.join(Config.publicPath, 'hot')).write(
+            http + '://' + Config.hmrOptions.host + ':' + port + '/'
+        );
+    }
+});
 
 /**
- * Register a Webpack build event handler.
- *
- * @param {Function} callback
+ * Mix exposes a simple, fluent API for activating many common build
+ * steps that a typical project should require. Behind the scenes,
+ * all calls to this fluent API will update the above config.
  */
-module.exports.then = (callback) => {
-    Mix.events.listen('build', callback);
 
-    return this;
-}
+let Api = require('./Api');
+let api = new Api();
 
-
-module.exports.config = Mix;
-module.exports.mix = module.exports;
-module.exports.plugins = {
-    WebpackNotifierPlugin: require('webpack-notifier'),
-    WebpackOnBuildPlugin: require('on-build-webpack'),
-    ExtractTextPlugin: require('extract-text-webpack-plugin'),
-    CopyWebpackPlugin: require('copy-webpack-plugin'),
-    FriendlyErrorsWebpackPlugin: require('friendly-errors-webpack-plugin'),
-    StatsWriterPlugin: require('webpack-stats-plugin').StatsWriterPlugin,
-    WebpackMd5HashPlugin: require('webpack-md5-hash')
-};
+module.exports = api;
+module.exports.config = Config;
